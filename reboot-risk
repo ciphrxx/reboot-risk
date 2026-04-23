@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+
+import os
+
+risks = []
+critical = {"/", "/boot", "/boot/efi"}
+
+def risk(msg, ctx=None):
+	risks.append((msg, ctx or []))
+
+def exists_dev(dev):
+	if dev.startswith("UUID="):
+		return os.path.exists("/dev/disk/by-uuid/" + dev.split("=", 1)[1])
+	if dev.startswith("LABEL="):
+		return os.path.exists("/dev/disk/by-label/" + dev.split("=", 1)[1])
+	if dev.startswith("/dev/"):
+		return os.path.exists(dev)
+	return True
+
+def check_fstab():
+	if not os.path.exists("/etc/fstab"):
+		risk("/etc/fstab is missing")
+		return
+
+	entries = {}
+
+	with open("/etc/fstab") as f:
+		for line in f:
+			line = line.strip()
+			if not line or line.startswith("#"):
+				continue
+
+			parts = line.split()
+			if len(parts) < 2:
+				continue
+
+			mount = parts[1]
+			if mount not in critical:
+				continue
+
+			if len(parts) < 3:
+				risk(f"Malformed fstab entry for {mount}: {line}")
+				continue
+
+			entries[mount] = parts[0]
+
+	if "/" not in entries:
+		risk("No root ('/') entry found in /etc/fstab")
+
+	for mount, dev in entries.items():
+		if not exists_dev(dev):
+			risk(f"Device for {mount} is not resolvable: {dev}")
+
+		if not os.path.exists(mount):
+			ctx = []
+			if mount == "/boot/efi":
+				mode = "UEFI" if os.path.exists("/sys/firmware/efi") else "BIOS"
+				ctx.append(f"boot mode: {mode}")
+			risk(f"Mountpoint directory missing: {mount}", ctx)
+
+def print_report():
+	if risks:
+		print("[BRICK_RISK]")
+		for msg, ctx in risk:
+			print(f"- {msg}")
+			if ctx:
+				print(" related context:")
+				for item in ctx:
+					print(f"  - {item}")
+			print()
+		print("DO NOT REBOOT")
+
+	else:
+		print("[OK]")
+		print("- No critical fstab reboot risks detected")
+
+def main():
+	check_fstab()
+	print_report()
+
+if __name__ == "__main__":
+	main()
