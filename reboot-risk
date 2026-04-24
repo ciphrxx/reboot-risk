@@ -11,8 +11,12 @@ def risk(msg, ctx=None):
 def exists_dev(dev):
 	if dev.startswith("UUID="):
 		return os.path.exists("/dev/disk/by-uuid/" + dev.split("=", 1)[1])
+	if devv.startswith("PARTUUID="):
+		return os.path.exists("/dev/disk/by-partuuid/" + dev.split("=", 1)[1])
 	if dev.startswith("LABEL="):
 		return os.path.exists("/dev/disk/by-label/" + dev.split("=", 1)[1])
+	if dev.startswith("PARTLABEL="):
+		return os.path.exists("/dev/disk/by-partlabel/" + dev.split("=", 1)[1])
 	if dev.startswith("/dev/"):
 		return os.path.exists(dev)
 	return True
