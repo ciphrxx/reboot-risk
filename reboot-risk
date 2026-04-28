@@ -11,7 +11,7 @@ def risk(msg, ctx=None):
 def exists_dev(dev):
 	if dev.startswith("UUID="):
 		return os.path.exists("/dev/disk/by-uuid/" + dev.split("=", 1)[1])
-	if devv.startswith("PARTUUID="):
+	if dev.startswith("PARTUUID="):
 		return os.path.exists("/dev/disk/by-partuuid/" + dev.split("=", 1)[1])
 	if dev.startswith("LABEL="):
 		return os.path.exists("/dev/disk/by-label/" + dev.split("=", 1)[1])
@@ -62,10 +62,45 @@ def check_fstab():
 				ctx.append(f"boot mode: {mode}")
 			risk(f"Mountpoint directory missing: {mount}", ctx)
 
+def check_uefi_requirements():
+	if not os.path.exists("/sys/firmware/efi"):
+		return
+
+	if not os.path.exists("/etc/fstab"):
+		return
+
+	has_efi = False
+	dev = None
+
+	with open("/etc/fstab") as f:
+		for line in f:
+			line = line.strip()
+			if not line or line.startswith("#"):
+				continue
+
+			parts = line.split()
+			if len(parts) < 2:
+				continue
+
+			if parts[1] == "/boot/efi":
+				has_efi = True
+				if len(parts) >= 3:
+					dev = parts[0]
+
+	if not has_efi:
+		risk("UEFI system but no /boot/efi entry in /etc/fstab")
+		return
+
+	if dev is not None and not exists_dev(dev):
+		risk(f"EFI device is not resolvable: {dev}")
+
+	if not os.path.exists("/boot/efi"):
+		risk(f"EFI mountpoint directory missing: /boot/efi")
+
 def print_report():
 	if risks:
 		print("[BRICK_RISK]")
-		for msg, ctx in risk:
+		for msg, ctx in risks:
 			print(f"- {msg}")
 			if ctx:
 				print(" related context:")
@@ -76,11 +111,11 @@ def print_report():
 
 	else:
 		print("[OK]")
-		print("- No critical fstab reboot risks detected")
 
 def main():
 	check_fstab()
 	print_report()
+	check_uefi_requirements()
 
 if __name__ == "__main__":
 	main()
